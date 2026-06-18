@@ -1,48 +1,37 @@
 # Stretch Tue — Learner Notes
 
-This file is your writeup. Use it to record your design decisions, the
-behavior you observed against the eval set, and (optionally) how you
-wired the critic into the M8 stretch query router. The TA reads this
-alongside `critic/verify.py` when grading the "README + optional
-warm-up" rubric dimension.
-
-A short, structured writeup is better than a long unstructured one.
-
 ## Design decisions
 
-Briefly describe the choices you made in `verify_claim`:
+I implemented the verifier as a four-stage cascade that returns as soon as a stage fires.
 
-* How did you structure the Stage 2 entailment query? Did you use a
-  single variable-length `[:SUBCLASS_OF*0..]` traversal, or two
-  separate Cypher calls (one for depth-0, one for depth >=1)? Why?
-* For Stage 3 (domain/range), did you fetch labels once per call or
-  cache them across calls?
-* Anything you considered but rejected? (Stage ordering, confidence
-  values, extra signals you tried.)
+For Stage 1, I used a direct relationship existence check for graph predicates and a reflexive equality check for the `type` predicate. This keeps direct support separate from hierarchical reasoning.
+
+For Stage 2, I used a separate variable-length traversal with `[:SUBCLASS_OF*1..]` for type claims. Stage 1 already handles the depth-0 case, so using a minimum depth of 1 clearly distinguishes entailed claims from directly supported claims.
+
+For Stage 3, I used the provided `_labels_of()` helper to retrieve node labels and compare them against the expected domain/range labels defined in `SCHEMA_CONSTRAINTS`. Labels were fetched when needed rather than cached because the evaluation graph is small and the implementation remains simple and readable.
+
+I considered combining the supported and entailed checks into a single traversal, but keeping them as separate stages made the cascade behavior easier to understand and aligned with the assignment specification. I also preserved the required stage ordering because changing it could incorrectly classify valid claims.
 
 ## Eval-set behavior
 
-Run the autograder locally and record what you observed:
-
-| Class          | Precision | Recall |
-|---|---|---|
-| supported      |           |        |
-| entailed       |    -      |        |
-| contradicted   |           |   -    |
+| Class        | Precision | Recall |
+| ------------ | --------- | ------ |
+| supported    | Passed    | Passed |
+| entailed     | -         | Passed |
+| contradicted | Passed    | -      |
 
 Notes:
-* Which class was hardest to hit the gate on? Why?
-* Did any individual claim surprise you (predicted differently than
-  you expected on inspection of the cascade)?
+
+* The entailed class was the most important part of the implementation because it depends on correctly traversing the `SUBCLASS_OF` hierarchy.
+* The distinction between supported and entailed claims became much clearer after separating the depth-0 and depth>=1 cases.
+* No major surprises appeared once the cascade ordering matched the specification.
 
 ## Abstention boundary
 
-In your own words: *what is the right way to think about when the
-critic should return `"unsupported"` vs. one of the other three
-verdicts?* Why is over-flagging "contradicted" worse than abstaining?
+The critic should return `"unsupported"` when there is not enough evidence in the graph to support, entail, or contradict a claim. Under the open-world assumption, missing information does not mean the claim is false.
+
+Over-flagging a claim as `"contradicted"` is worse than abstaining because contradiction is a much stronger statement. A contradiction indicates that the claim violates known schema constraints, while an unsupported claim may simply refer to information that is not present in the graph. Returning `"unsupported"` avoids making unjustified conclusions.
 
 ## Optional — M8 router warm-up
 
-If you completed the M8 stretch query router, describe how you wired
-`verify_claim` into it. If you skipped this, write one sentence saying
-so. Either is acceptable.
+I did not integrate the critic with the M8 query router for this assignment.
